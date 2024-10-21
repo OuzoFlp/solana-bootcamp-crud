@@ -1,22 +1,57 @@
 'use client'
 
-import { Keypair, PublicKey } from '@solana/web3.js'
-import { useMemo } from 'react'
-import { ellipsify } from '../ui/ui-layout'
-import { ExplorerLink } from '../cluster/cluster-ui'
+import { PublicKey } from '@solana/web3.js'
 import { useCrudappProgram, useCrudappProgramAccount } from './crudapp-data-access'
+import { useState } from 'react'
+import { useWallet } from '@solana/wallet-adapter-react'
 
 export function CrudappCreate() {
-  const { initialize } = useCrudappProgram()
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const { createEntry } = useCrudappProgram();
+  const { publicKey } = useWallet();
+
+  const isFormValid = title.trim() !== '' && message.trim() !== '';
+
+  const handleSubmit = async () => {
+    if (publicKey && isFormValid) {
+      createEntry.mutateAsync({ title, message, owner: publicKey });
+    }
+  };
+
+  if (!publicKey) {
+    return (
+      <div className="alert alert-warning">
+        <span>You must be connected to a wallet to create a journal entry.</span>
+      </div>
+    );
+  }
 
   return (
-    <button
-      className="btn btn-xs lg:btn-md btn-primary"
-      onClick={() => initialize.mutateAsync(Keypair.generate())}
-      disabled={initialize.isPending}
-    >
-      Create {initialize.isPending && '...'}
-    </button>
+   <div className="align-center">
+    <div>
+      <input 
+      type="text" 
+      placeholder="Title" 
+      value={title} 
+      onChange={(e) => setTitle(e.target.value)} 
+      className='input input-bordered w-full max-w-xs mb-4 align-center'
+      />
+      <textarea 
+        placeholder="Message" 
+        value={message} 
+        onChange={(e) => setMessage(e.target.value)} 
+        className='textarea textarea-bordered w-full max-w-xs mb-4 align-center'
+      />
+    </div>
+      <button 
+        onClick={handleSubmit} 
+        disabled={!isFormValid || createEntry.isPending} 
+        className='btn btn-xs lg:btn-md btn-primary'
+      >
+        Create Journal Entry
+      </button>
+   </div>
   )
 }
 
@@ -45,8 +80,8 @@ export function CrudappList() {
         </div>
       ) : (
         <div className="text-center">
-          <h2 className={'text-2xl'}>No accounts</h2>
-          No accounts found. Create one above to get started.
+          <h2 className={'text-2xl'}>No journal entries</h2>
+          No entries found. Create one above to get started.
         </div>
       )}
     </div>
@@ -54,69 +89,71 @@ export function CrudappList() {
 }
 
 function CrudappCard({ account }: { account: PublicKey }) {
-  const { accountQuery, incrementMutation, setMutation, decrementMutation, closeMutation } = useCrudappProgramAccount({
-    account,
-  })
+  const { 
+    accountQuery, updateEntry, deleteEntry
 
-  const count = useMemo(() => accountQuery.data?.count ?? 0, [accountQuery.data?.count])
+
+   } = useCrudappProgramAccount({
+    account,
+  });
+
+  const {publicKey} = useWallet();
+
+  const [message, setMessage] = useState("");
+  const title = accountQuery.data?.title;
+
+  const isFormValid = message.trim() !== '';
+
+  const handleSubmit = async () => {
+    if (publicKey && isFormValid && title) {
+      updateEntry.mutateAsync({ title, message, account: publicKey });
+    }
+  };
+
+  if (!publicKey) {
+    return (
+      <div className="alert alert-warning">
+        <span>You must be connected to a wallet to create a journal entry.</span>
+      </div>
+    );
+  }
 
   return accountQuery.isLoading ? (
-    <span className="loading loading-spinner loading-lg"></span>
-  ) : (
+    <span className="loading loading-spinner loading-lg"></span> ) : (
     <div className="card card-bordered border-base-300 border-4 text-neutral-content">
       <div className="card-body items-center text-center">
-        <div className="space-y-6">
-          <h2 className="card-title justify-center text-3xl cursor-pointer" onClick={() => accountQuery.refetch()}>
-            {count}
-          </h2>
-          <div className="card-actions justify-around">
-            <button
-              className="btn btn-xs lg:btn-md btn-outline"
-              onClick={() => incrementMutation.mutateAsync()}
-              disabled={incrementMutation.isPending}
-            >
-              Increment
+        <div className='space-y-6'>
+        <h2 className="card-title justify-center text-3xl cursor-pointer"
+        onClick={() => accountQuery.refetch()}>{accountQuery.data?.title}</h2>
+        <p> {accountQuery.data?.message}</p>
+        <div className="card-actions justify-around">
+          <textarea
+            placeholder='Message'
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            className='textarea textarea-bordered w-full max-w-xs'
+            />    
+            <button 
+            onClick={handleSubmit} 
+            disabled={!isFormValid || updateEntry.isPending} 
+            className='btn btn-xs lg:btn-md btn-primary'>
+            Update Journal Entry
             </button>
-            <button
-              className="btn btn-xs lg:btn-md btn-outline"
-              onClick={() => {
-                const value = window.prompt('Set value to:', count.toString() ?? '0')
-                if (!value || parseInt(value) === count || isNaN(parseInt(value))) {
-                  return
-                }
-                return setMutation.mutateAsync(parseInt(value))
-              }}
-              disabled={setMutation.isPending}
-            >
-              Set
-            </button>
-            <button
-              className="btn btn-xs lg:btn-md btn-outline"
-              onClick={() => decrementMutation.mutateAsync()}
-              disabled={decrementMutation.isPending}
-            >
-              Decrement
-            </button>
-          </div>
-          <div className="text-center space-y-4">
-            <p>
-              <ExplorerLink path={`account/${account}`} label={ellipsify(account.toString())} />
-            </p>
-            <button
-              className="btn btn-xs btn-secondary btn-outline"
-              onClick={() => {
-                if (!window.confirm('Are you sure you want to close this account?')) {
-                  return
-                }
-                return closeMutation.mutateAsync()
-              }}
-              disabled={closeMutation.isPending}
-            >
-              Close
-            </button>
-          </div>
+          <button 
+            onClick={() => {
+              const title = accountQuery.data?.title;
+              if (title) {
+                return deleteEntry.mutateAsync(title);
+              }
+            } 
+          }
+          >
+            Delete
+          </button>
         </div>
       </div>
     </div>
-  )
+  </div>
+    )
+  
 }
